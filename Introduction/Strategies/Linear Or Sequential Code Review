@@ -2,7 +2,7 @@ Code Review Strategies -
 
 1. Linear / Sequential Code Review - Linear Code Review Strategy means reviewing the code in a fixed top-to-bottom sequence instead of following every function call immediately. You start with Function 1 and continue to Function 4, Function 5, and Function 8, following the green arrows. Even if Function 1 calls Function 2, you do not switch to it immediately. You stay on the main review path and review the called functions later when their turn comes in the sequence. The black arrows only show function calls or dependencies, while the green arrows define the order of the code review.
 
-ss
+
 A. Advantages:
 - Simple and beginner-friendly
 - Nothing gets missed
