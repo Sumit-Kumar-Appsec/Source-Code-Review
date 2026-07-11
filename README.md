@@ -1,2 +1,5 @@
-### INTRODUCTION OF CODE REVIEW
-    1. Strategies
+# Index of Code Review
+
+## Introduction
+
+- [Strategies](Introduction/Strategies.md)
