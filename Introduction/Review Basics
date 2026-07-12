@@ -1,0 +1,157 @@
+Basics of Reviewing
+    
+    ### Base function (same for all)
+    
+    ```
+    function hello(arg1, arg2) {
+        dangerous_function(arg1)
+    }
+    ```
+    
+    Here, `dangerous_function` can be any risky operation — like running a database query, opening a file, or printing something on an HTML page. `arg1` is its input.
+    
+    ### Snippet 1: Direct dangerous function (no filtering)
+    
+    ```
+    function hello(arg1, arg2) {
+        dangerous_function(arg1)
+    }
+    ```
+    
+    Now two situations can happen here:
+    
+    **Case A — arg1 is not coming from the user**
+    
+    If `arg1` is hardcoded or only set by internal code (the user cannot touch it), then there is no bug. No matter how "dangerous" the function is, if the attacker cannot put anything into it, there is no risk. In review, we say "move on" here — this area isn't worth checking further.
+    
+    **Case B — arg1 is coming from user input**
+    
+    If the value of `arg1` comes directly from data given by the user (form, URL, file upload, anything), and there is no checking in between — then this is a **direct vulnerability**. The user can send whatever value they want, and it will go straight to the dangerous function.
+    
+    This case is **rare** in the real world, because most developers don't write code this directly — they add some kind of check. But when you do find it, it's the easiest and most serious bug there is.
+    
+    ### Snippet 2: Filtering or escaping added
+    
+    ```
+    function hello(arg1, arg2) {
+        val1 = filtering_or_escaping(arg1)
+        dangerous_function(val1)
+    }
+    ```
+    
+    Now the developer has added a safety step. Instead of going directly, `arg1` first passes through the `filtering_or_escaping`function, which converts it into a **clean** or **safe format**, and only then does `val1` go into the dangerous function.
+    
+    This works in two ways:
+    
+    - **Filtering** = removing bad/risky characters
+    - **Escaping** = rewriting bad characters in a way that they lose their special meaning (like turning `<` into `&lt;` so it doesn't become an HTML tag)
+    
+    Now, while reviewing, you have to check — **how good** this filtering actually is. If it's weak, it can still be bypassed (we'll explain this further ahead).
+    
+    ### Snippet 3: Killing the input
+    
+    ```
+    function hello(arg1, arg2) {
+        if (filtering(arg1)) {
+                die()    
+         }    
+         dangerous_function(arg1)
+    }
+    ```
+    
+    Here the approach is a bit different. First, `filtering(arg1)` checks whether the input has something suspicious or not. If **anything risky is found**, the entire execution is stopped right there with **`die()`** — meaning the function doesn't proceed further, the request gets rejected.
+    
+    If the filtering didn't flag anything, then `arg1` goes **as-is** (without modification) into `dangerous_function`.
+    
+    Understand the difference from Snippet 2: In Snippet 2, the input gets **modified** (made safe and then passed on). In Snippet 3, the input is not modified — it's just checked, and if it looks bad, the **entire request gets cancelled**.
+    
+    ### Snippet 4: Filter + Kill + Modification — all together
+    
+    ```
+    function hello(arg1, arg2) {
+        if (filtering(arg1)) {
+                die()
+         }    
+         val1 = further_modifications(arg1)    
+         dangerous_function(val1)
+    }
+    ```
+    
+    Now all three things are happening together:
+    
+    1. **Filtering check** — if something is clearly bad, stop it immediately with `die()`
+    2. If that check passes, then **`further_modifications`** runs — this changes the input a bit (like automatically adding some extra characters, encoding it, adding quotes, adding escape sequences)
+    3. After that, the modified value (`val1`) goes into the dangerous function
+    
+    This is the strongest defense of the three, because there are two layers — first rejecting, then also converting whatever remains into a safe format.
+    
+    ### Snippet 5: Even after all this — there's also a check inside the dangerous function
+    
+    !Screenshot 2026-07-12 at 9.31.05 AM.png
+    
+    Here it's the same code as Snippet 4, but let's understand a new concept:
+    
+    Suppose the attacker got past all the filtering, killing, and modification — their data has now reached `dangerous_function(val1)`. But `dangerous_function` itself might have its **own filtering inside it** (which you can't see, because it's part of some library or internal system).
+    
+    What does this mean for the review?
+    
+    - If that internal filtering **blocks** the data, then your bug stops right there — the exploit won't work
+    - If that filtering only **hides the result** (like not showing an error message, or not returning output), it means the attacker won't know whether their exploit worked or not. This is called a **"blind" vulnerability** — the bug really exists, but the attacker can't "see" whether it worked. Such a bug becomes hard to exploit because there's no feedback.
+    
+    ---
+    
+    ## Now the real thing — How to do Code Review (the image 1 flowchart)
+    
+    When you review a function from a security angle, a sequence of questions runs through your mind — just like that diagram:
+    
+    #### Step 1: "Is there dangerous code?"
+    
+    First, look — what is this function actually doing? Is it performing some risky operation — like a database query, file system access, command execution, or writing HTML output?
+    
+    - **No** → this function is outside your review scope, "move on" — check the next function
+    - **Yes** → move to the next step
+    
+    #### Step 2: "Is there control over interesting arguments?"
+    
+    Now look — the input reaching this dangerous code, can the **attacker control** it from somewhere? (URL parameter, form field, header, uploaded file — any place from which outside user data can come)
+    
+    - **No** → the attacker can't touch it, "move on"
+    - **Yes** → move to the next step
+    
+    #### Step 3: "Is filtering in place?"
+    
+    Now check — does the code have any filtering or escaping mechanism (like we saw in snippets 2, 3)?
+    
+    - **No** → there's no protection at all, this is straight up a **Vulnerability** — confirmed bug
+    - **Yes** → move to the next step
+    
+    #### Step 4: "Is the filtering sufficient?"
+    
+    This is the most important and most difficult step. Just having filtering isn't enough — you need to see **how good** it is:
+    
+    - Does it cover all dangerous characters, or is something missing?
+    - Are there known tricks to bypass it (encoding tricks, case-sensitivity issues, unicode tricks)?
+    - **No (weak filtering)** → this is a **Weakness** — not a full vulnerability, but an issue worth reporting
+    - **Yes, but the "yes with more filtering" case** — meaning the filtering is fine, but there's an extra layer before it too — so go back and check that layer as well (in the diagram, this loops back)
+    - **Yes (properly filtered)** → move to the next step
+    
+    #### Step 5: "Is the code reachable?"
+    
+    Final check — okay, the code looks vulnerable, but can the attacker **actually reach it**? Is that route publicly accessible, or is it behind authentication, or can it only be triggered from an internal admin panel?
+    
+    - **Yes** → confirm **Vulnerability**
+    - **No** → this is a **Weakness** — the code is wrong, but it's not exploitable right now because the attacker can't reach it (maybe some future change will make it reachable)
+    
+    ---
+    
+    ### What this means practically
+    
+    Whenever you review a function, ask yourself these 5 questions:
+    
+    1. Is a risky operation happening?
+    2. Can the attacker control its input?
+    3. Is there any filtering?
+    4. Is that filtering strong enough?
+    5. Is this code actually reachable for the attacker?
+    
+    Wherever the answer chain breaks (any step gets a "no" that stops the bug), that's where your "move on" decision gets made. And as long as everything keeps going towards "yes," you're getting closer to a real vulnerability.
